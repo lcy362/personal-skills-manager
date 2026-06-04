@@ -1,0 +1,8 @@
+{
+  "name": "personal-skills-manager",
+  "version": "1.0.0",
+  "description": "Personal AI agent skills manager — manage skill files globally and per-project",
+  "cli": "bin/pks",
+  "skills_dir": "skills/",
+  "project_skills_dir": ".skills/"
+}

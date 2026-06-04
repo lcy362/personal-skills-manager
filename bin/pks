@@ -1,0 +1,407 @@
+#!/usr/bin/env bash
+set -euo pipefail
+shopt -s nullglob
+
+resolve_psm_dir() {
+  local self
+  if [[ -L "$0" ]]; then
+    self="$(readlink "$0")"
+    [[ "$self" != /* ]] && self="$(dirname "$0")/$self"
+  else
+    self="$0"
+  fi
+  (cd "$(dirname "$self")/.." && pwd)
+}
+PSM_DIR="$(resolve_psm_dir)"
+SKILLS_DIR="$PSM_DIR/skills"
+PROJECT_SKILLS_DIR=".skills"
+
+# ---- startup sanity check --------------------------------------------------
+if [[ ! -d "$SKILLS_DIR" ]]; then
+  echo "✖ pks: skills directory not found at $SKILLS_DIR" >&2
+  echo "  Script location: $0" >&2
+  echo "  Resolved PSM_DIR: $PSM_DIR" >&2
+  echo "  Run 'which pks' to check which command is being executed." >&2
+  echo "  If you just installed, run 'source ~/.zshrc' first." >&2
+  exit 1
+fi
+
+print_error() { printf "\033[31m✖\033[0m %s\n" "$*" >&2; }
+print_ok()    { printf "\033[32m✓\033[0m %s\n" "$*"; }
+print_info()  { printf "\033[36mℹ\033[0m %s\n" "$*"; }
+print_warn()  { printf "\033[33m⚠\033[0m %s\n" "$*" >&2; }
+
+usage() {
+  cat <<'EOF'
+pks — Personal Skills Manager
+
+USAGE
+  pks list                      List all global skills
+  pks new <name>                Create a new skill skeleton
+  pks delete <name>             Permanently delete a global skill
+
+  pks init                      Init .skills/ in current project
+  pks status                    Show installed skills in current project
+  pks available                 Show installable global skills (with project status)
+  pks install <name>            Install a skill into current project
+  pks uninstall <name>          Uninstall a skill from current project
+
+  pks install-self              Install pks to system (~/.local/share/pks)
+  pks doctor                    Show diagnostic info
+  pks help                      Show this help
+  pks version                   Show version
+EOF
+}
+
+version() {
+  echo "pks 1.0.0"
+  echo "Personal Skills Manager"
+}
+
+# ---- INDEX.md rebuild ------------------------------------------------------
+rebuild_index() {
+  local index_file="$PROJECT_SKILLS_DIR/INDEX.md"
+  {
+    printf '%s\n' "# Personal Skills"
+    printf '%s\n' ""
+    printf '%s\n' "This directory contains AI agent skills installed for this project."
+    printf '%s\n' "Agents: read the \`SKILL.md\` file in each skill directory below for relevant instructions."
+    printf '%s\n' ""
+    printf '%s\n' "## Installed Skills"
+    printf '%s\n' ""
+
+    local count=0
+    for d in "$PROJECT_SKILLS_DIR"/*/; do
+      local skillname; skillname="$(basename "$d")"
+      [[ "$skillname" == _* ]] && continue
+      count=$((count + 1))
+      local sdesc="" sver=""
+      [[ -f "$d/SKILL.md" ]] && sdesc="$(grep -m1 '^description:' "$d/SKILL.md" 2>/dev/null | sed 's/^description:[[:space:]]*//')"
+      [[ -f "$d/SKILL.md" ]] && sver="$(grep -m1 '^version:' "$d/SKILL.md" 2>/dev/null | sed 's/^version:[[:space:]]*//')"
+      printf -- "- **[%s](%s/SKILL.md)** — %s\n" "$skillname" "$skillname" "${sdesc:-No description}"
+      printf "  Version: %s\n" "${sver:---}"
+      printf "\n"
+    done
+
+    if [[ $count -eq 0 ]]; then
+      printf '%s\n' "*(No skills installed yet. Run \`pks install <name>\` to add one.)*"
+      printf '\n'
+    fi
+  } > "$index_file"
+}
+
+# ---- global skill operations -----------------------------------------------
+cmd_list() {
+  local any=0
+  for skill_dir in "$SKILLS_DIR"/*/; do
+    local name; name="$(basename "$skill_dir")"
+    [[ "$name" == _* ]] && continue
+    any=1
+    local desc=""
+    [[ -f "$skill_dir/SKILL.md" ]] && desc="$(grep -m1 '^description:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^description:[[:space:]]*//')"
+    printf "  \033[1m%s\033[0m\n" "$name"
+    [[ -n "$desc" ]] && printf "    %s\n" "$desc"
+  done
+  if [[ $any -eq 0 ]]; then
+    print_info "No skills found. Create one with: pks new <name>"
+  fi
+}
+
+cmd_new() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    print_error "Usage: pks new <skill-name>"
+    return 1
+  fi
+  local target="$SKILLS_DIR/$name"
+  if [[ -d "$target" ]]; then
+    print_error "Skill '$name' already exists at $target"
+    return 1
+  fi
+  mkdir -p "$target/files"
+
+  if [[ -f "$SKILLS_DIR/_template/SKILL.md" ]]; then
+    sed "s/<skill-name>/$name/g" "$SKILLS_DIR/_template/SKILL.md" > "$target/SKILL.md"
+  else
+    cat > "$target/SKILL.md" <<SKILLEOF
+---
+name: $name
+description: TODO: describe this skill
+version: 0.1.0
+---
+
+# $name
+
+TODO: describe what this skill does
+
+## Usage
+
+TODO: how agents should use this skill
+
+## Files
+
+- \`files/\`: additional files bundled with this skill
+SKILLEOF
+  fi
+
+  print_ok "Created skill '$name' at $target"
+  print_info "Edit $target/SKILL.md to add instructions"
+}
+
+cmd_delete() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    print_error "Usage: pks delete <skill-name>"
+    return 1
+  fi
+  local target="$SKILLS_DIR/$name"
+  if [[ ! -d "$target" ]]; then
+    print_error "Skill '$name' not found at $target"
+    return 1
+  fi
+  if [[ "$name" == _* ]]; then
+    print_error "Cannot delete template (_*) skills"
+    return 1
+  fi
+  rm -rf "$target"
+  print_ok "Deleted skill '$name' from global skills"
+}
+
+# ---- project-level ---------------------------------------------------------
+is_in_project() { [[ -d "$PROJECT_SKILLS_DIR" ]]; }
+
+ensure_in_project() {
+  if ! is_in_project; then
+    print_error "Not in a pks-initialized project (no .skills/ directory found)"
+    print_info "Run 'pks init' first"
+    return 1
+  fi
+}
+
+cmd_init() {
+  if is_in_project; then
+    print_info ".skills/ already initialized in $(pwd)"
+    return 0
+  fi
+  mkdir -p "$PROJECT_SKILLS_DIR"
+  rebuild_index
+  print_ok "Initialized .skills/ in $(pwd)"
+}
+
+cmd_available() {
+  ensure_in_project || return 1
+
+  local installed=""
+  for d in "$PROJECT_SKILLS_DIR"/*/; do
+    local n; n="$(basename "$d")"
+    [[ "$n" == _* ]] && continue
+    installed="$installed $n"
+  done
+
+  local any=0
+  for skill_dir in "$SKILLS_DIR"/*/; do
+    local name; name="$(basename "$skill_dir")"
+    [[ "$name" == _* ]] && continue
+    any=1
+    local desc="" ver=""
+    [[ -f "$skill_dir/SKILL.md" ]] && desc="$(grep -m1 '^description:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^description:[[:space:]]*//')"
+
+    if [[ " $installed " == *" $name "* ]]; then
+      [[ -f "$PROJECT_SKILLS_DIR/$name/SKILL.md" ]] && ver="$(grep -m1 '^version:' "$PROJECT_SKILLS_DIR/$name/SKILL.md" 2>/dev/null | sed 's/^version:[[:space:]]*//')"
+      printf "  \033[32m✓\033[0m \033[1m%s\033[0m" "$name"
+      [[ -n "$ver" ]] && printf " (\033[33m%s\033[0m)" "$ver"
+      printf "\n"
+    else
+      printf "  \033[90m-\033[0m \033[1m%s\033[0m\n" "$name"
+    fi
+    [[ -n "$desc" ]] && printf "    %s\n" "$desc"
+  done
+
+  if [[ $any -eq 0 ]]; then
+    print_info "No global skills available. Create one with: pks new <name>"
+  fi
+}
+
+cmd_status() {
+  ensure_in_project || return 1
+
+  local count=0
+  for d in "$PROJECT_SKILLS_DIR"/*/; do
+    local name; name="$(basename "$d")"
+    [[ "$name" == _* ]] && continue
+    count=$((count + 1))
+  done
+
+  printf "Skills in \033[1m%s\033[0m:\n" "$(pwd)"
+  if [[ $count -eq 0 ]]; then
+    print_info "No skills installed. Run 'pks available' to see installable skills."
+  else
+    local i=0
+    for d in "$PROJECT_SKILLS_DIR"/*/; do
+      local name; name="$(basename "$d")"
+      [[ "$name" == _* ]] && continue
+      i=$((i + 1))
+      local desc="" ver=""
+      [[ -f "$d/SKILL.md" ]] && desc="$(grep -m1 '^description:' "$d/SKILL.md" 2>/dev/null | sed 's/^description:[[:space:]]*//')"
+      [[ -f "$d/SKILL.md" ]] && ver="$(grep -m1 '^version:' "$d/SKILL.md" 2>/dev/null | sed 's/^version:[[:space:]]*//')"
+      printf "  \033[32m✓\033[0m \033[1m%s\033[0m" "$name"
+      [[ -n "$ver" ]] && printf " (\033[33m%s\033[0m)" "$ver"
+      printf "\n"
+      [[ -n "$desc" ]] && printf "    %s\n" "$desc"
+    done
+  fi
+
+  local avail=0
+  for skill_dir in "$SKILLS_DIR"/*/; do
+    local n; n="$(basename "$skill_dir")"
+    [[ "$n" == _* ]] && continue
+    avail=$((avail + 1))
+  done
+  printf "\n"
+  print_ok "$count skill(s) installed"
+  print_info "$avail skill(s) available globally"
+}
+
+cmd_install() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    print_error "Usage: pks install <skill-name>"
+    return 1
+  fi
+
+  ensure_in_project || return 1
+
+  local src="$SKILLS_DIR/$name"
+  if [[ ! -d "$src" ]]; then
+    print_error "Skill '$name' not found in global skills"
+    print_info "Available:"
+    cmd_list
+    return 1
+  fi
+
+  local dest="$PROJECT_SKILLS_DIR/$name"
+  if [[ -d "$dest" ]]; then
+    print_warn "Skill '$name' is already installed"
+    return 0
+  fi
+
+  mkdir -p "$dest"
+  cp -R "$src/"* "$dest/"
+  print_ok "Installed skill '$name'"
+  rebuild_index
+  print_info "Updated $PROJECT_SKILLS_DIR/INDEX.md"
+}
+
+cmd_uninstall() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    print_error "Usage: pks uninstall <skill-name>"
+    return 1
+  fi
+
+  ensure_in_project || return 1
+
+  local dest="$PROJECT_SKILLS_DIR/$name"
+  if [[ ! -d "$dest" ]]; then
+    print_error "Skill '$name' is not installed in this project"
+    return 1
+  fi
+
+  rm -rf "$dest"
+  print_ok "Uninstalled skill '$name'"
+  rebuild_index
+  print_info "Updated $PROJECT_SKILLS_DIR/INDEX.md"
+}
+
+# ---- self-install ----------------------------------------------------------
+cmd_install_self() {
+  local target_home="${PKS_HOME:-$HOME/.local/share/pks}"
+  local target_bin_dir="${PKS_BIN_DIR:-$HOME/.local/bin}"
+  local target_bin="$target_bin_dir/pks"
+
+  print_info "Installing to $target_home ..."
+  mkdir -p "$target_home" "$target_bin_dir"
+
+  # Copy entire PSM_DIR to target
+  cp -R "$PSM_DIR/." "$target_home/"
+  chmod +x "$target_home/bin/pks"
+
+  # Create symlink
+  rm -f "$target_bin"
+  ln -s "$target_home/bin/pks" "$target_bin"
+  print_ok "Symlink: $target_bin → $target_home/bin/pks"
+
+  # Add to PATH
+  local rc
+  if [[ -n "${ZSH_VERSION:-}" ]]; then
+    rc="$HOME/.zshrc"
+  elif [[ -f "$HOME/.zshrc" ]]; then
+    rc="$HOME/.zshrc"
+  elif [[ -f "$HOME/.bashrc" ]]; then
+    rc="$HOME/.bashrc"
+  elif [[ -f "$HOME/.bash_profile" ]]; then
+    rc="$HOME/.bash_profile"
+  else
+    rc="$HOME/.zshrc"
+  fi
+
+  # Prepend to PATH so ~/.local/bin takes priority over /usr/bin
+  local marker="# pks PATH"
+  if ! grep -qF "$target_bin_dir" "$rc" 2>/dev/null; then
+    printf '\n%s\n%s\n%s\n' "# Added by pks" "export PATH=\"$target_bin_dir:\$PATH\"" "# pks PATH" >> "$rc"
+    print_ok "Added $target_bin_dir to PATH (prepended) in $rc"
+  fi
+
+  print_ok "pks installed! Run 'source $rc' or restart terminal."
+}
+
+# ---- diagnostics -----------------------------------------------------------
+cmd_doctor() {
+  echo "pks doctor — diagnostics"
+  echo ""
+  printf "  %-20s %s\n" "Script path:" "$0"
+  if [[ -L "$0" ]]; then
+    printf "  %-20s %s\n" "Symlink target:" "$(readlink "$0")"
+  fi
+  printf "  %-20s %s\n" "PSM_DIR:" "$PSM_DIR"
+  printf "  %-20s %s\n" "SKILLS_DIR:" "$SKILLS_DIR"
+  printf "  %-20s %s\n" "Skills exist:" "$([[ -d "$SKILLS_DIR" ]] && echo 'yes' || echo 'NO!')"
+  printf "  %-20s %s\n" "Shell:" "$SHELL"
+  printf "  %-20s %s\n" "CWD:" "$(pwd)"
+  printf "  %-20s %s\n" "which pks:" "$(command -v pks 2>/dev/null || echo 'not in PATH')"
+  echo ""
+  if [[ ! -d "$SKILLS_DIR" ]]; then
+    echo "  ⚠ SKILLS_DIR missing — global commands (list/new/delete) won't work."
+    echo "  If you installed via install.sh or 'pks install-self',"
+    echo "  re-run the install from the repository directory."
+    echo "  The skills/ directory must be alongside bin/pks."
+  fi
+}
+
+# ---- main ------------------------------------------------------------------
+main() {
+  local cmd="${1:-help}"
+  shift 2>/dev/null || true
+
+  case "$cmd" in
+    list|ls)           cmd_list "$@" ;;
+    new|create)        cmd_new "${1:-}" ;;
+    delete|remove|rm)  cmd_delete "${1:-}" ;;
+    init)              cmd_init "$@" ;;
+    available|avail|av) cmd_available "$@" ;;
+    status|st)         cmd_status "$@" ;;
+    install|i)         cmd_install "${1:-}" ;;
+    uninstall)         cmd_uninstall "${1:-}" ;;
+    install-self|self-install) cmd_install_self "$@" ;;
+    doctor|diag)       cmd_doctor "$@" ;;
+    help|--help|-h)    usage ;;
+    version|--version|-v) version ;;
+    *)
+      [[ -n "$cmd" ]] && print_error "Unknown command: $cmd"
+      usage
+      return 1
+      ;;
+  esac
+}
+
+main "$@"
