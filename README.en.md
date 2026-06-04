@@ -8,13 +8,13 @@ A personal skill management tool for AI coding agents. Manage global instruction
 
 ## Background
 
-New AI coding agents emerge constantly — Cursor, Windsurf, Claude Code, OpenCode, and more. Each has its own proprietary skill/rule configuration format, making them mutually incompatible. Switching agents means rebuilding your setup from scratch, locking you into a single tool and preventing you from leveraging free trials across different agents to reduce costs.
+I wrote about a simple idea in this blog post: **Agents are just tools. Documentation is the core.**
 
-pks was built on a simple premise: **build agent-agnostic skill workflows with plain Markdown**. Skill files live in your project directory, and any agent exploring the project can naturally discover and read them — no proprietary config format required.
+> [How to Farm Free Tokens: Building Agent-Independent AI Workflows](https://lichuanyang.top/en/posts/26060/) · [教你薅 token：构建 agent 无关的 AI 工作流](https://lichuanyang.top/posts/26060/)
 
-For a deeper dive into the design philosophy, see:
-- [AI Coding Agent Skill Management — Reducing Token Waste](https://lichuanyang.top/en/posts/26060/)
-- [中文版：AI 编码 Agent 技能管理 — 降低 Token 开销的一种思路](https://lichuanyang.top/posts/26060/)
+Every AI coding agent — Cursor, Windsurf, Claude Code, OpenCode — follows the same loop: read docs → assemble prompts → call a model → modify files. The differences between them are smaller than you'd think. What actually matters is the documentation and workflows you maintain. Get those right, and the agent barely matters — you can freely switch to whichever platform offers free tokens.
+
+pks is the practical tool that makes this idea work: **package your documented workflows as skills, inject them per-project**. No proprietary config formats, no vendor lock-in. Just plain Markdown that any agent can read.
 
 ---
 
