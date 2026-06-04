@@ -8,9 +8,9 @@ A personal skill management tool for AI coding agents. Manage global instruction
 
 ## Background
 
-Every AI coding agent conversation consumes tokens. When an agent repeatedly reads generic instructions unrelated to the current task (e.g., company coding standards, personal preferences), it introduces unnecessary token overhead.
+New AI coding agents emerge constantly — Cursor, Windsurf, Claude Code, OpenCode, and more. Each has its own proprietary skill/rule configuration format, making them mutually incompatible. Switching agents means rebuilding your setup from scratch, locking you into a single tool and preventing you from leveraging free trials across different agents to reduce costs.
 
-pks is designed around a simple idea: **inject non-generic instruction sets as skills only when needed**. The agent only reads a skill when it's relevant to the current project, reducing token waste.
+pks was built on a simple premise: **build agent-agnostic skill workflows with plain Markdown**. Skill files live in your project directory, and any agent exploring the project can naturally discover and read them — no proprietary config format required.
 
 For a deeper dive into the design philosophy, see:
 - [AI Coding Agent Skill Management — Reducing Token Waste](https://lichuanyang.top/en/posts/26060/)
