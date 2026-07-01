@@ -44,9 +44,11 @@ USAGE
   pks status                    Show installed skills in current project
   pks available                 Show installable global skills (with project status)
   pks install <name>            Install a skill into current project
-  pks uninstall <name>          Uninstall a skill from current project
+   pks uninstall <name>          Uninstall a skill from current project
+   pks update <name>             Reinstall a skill (uninstall then reinstall from global)
+   pks push <name>               Push project skill edits back to global skills
 
-  pks install-self              Install pks to system (~/.local/share/pks)
+   pks install-self              Install pks to system (~/.local/share/pks)
   pks doctor                    Show diagnostic info
   pks help                      Show this help
   pks version                   Show version
@@ -313,6 +315,58 @@ cmd_uninstall() {
   print_info "Updated $PROJECT_SKILLS_DIR/INDEX.md"
 }
 
+cmd_update() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    print_error "Usage: pks update <skill-name>"
+    return 1
+  fi
+
+  ensure_in_project || return 1
+
+  local dest="$PROJECT_SKILLS_DIR/$name"
+  if [[ ! -d "$dest" ]]; then
+    print_error "Skill '$name' is not installed in this project"
+    return 1
+  fi
+
+  local src="$SKILLS_DIR/$name"
+  if [[ ! -d "$src" ]]; then
+    print_error "Skill '$name' not found in global skills — cannot reinstall"
+    return 1
+  fi
+
+  rm -rf "$dest"
+  print_ok "Uninstalled skill '$name'"
+
+  mkdir -p "$dest"
+  cp -R "$src/"* "$dest/"
+  print_ok "Updated skill '$name' (reinstalled from global skills)"
+  rebuild_index
+  print_info "Updated $PROJECT_SKILLS_DIR/INDEX.md"
+}
+
+cmd_push() {
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    print_error "Usage: pks push <skill-name>"
+    return 1
+  fi
+
+  ensure_in_project || return 1
+
+  local src="$PROJECT_SKILLS_DIR/$name"
+  if [[ ! -d "$src" ]]; then
+    print_error "Skill '$name' is not installed in this project"
+    return 1
+  fi
+
+  local dest="$SKILLS_DIR/$name"
+  mkdir -p "$dest"
+  cp -R "$src/"* "$dest/"
+  print_ok "Pushed skill '$name' to global skills"
+}
+
 # ---- self-install ----------------------------------------------------------
 cmd_install_self() {
   local target_home="${PKS_HOME:-$HOME/.local/share/pks}"
@@ -392,6 +446,8 @@ main() {
     status|st)         cmd_status "$@" ;;
     install|i)         cmd_install "${1:-}" ;;
     uninstall)         cmd_uninstall "${1:-}" ;;
+    update|up)         cmd_update "${1:-}" ;;
+    push)              cmd_push "${1:-}" ;;
     install-self|self-install) cmd_install_self "$@" ;;
     doctor|diag)       cmd_doctor "$@" ;;
     help|--help|-h)    usage ;;
