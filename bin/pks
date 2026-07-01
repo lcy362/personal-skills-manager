@@ -48,8 +48,13 @@ USAGE
    pks update <name>             Reinstall a skill (uninstall then reinstall from global)
    pks push <name>               Push project skill edits back to global skills
 
+   pks agents                    List detected agent skill directories
+   pks install-to <agent> <skill> Install a global skill to an agent's skill dir
+   pks uninstall-from <agent> <skill> Remove a skill from an agent's skill dir
+   pks update-to <agent> <skill>   Update a skill in agent dir from global skills
+
    pks install-self              Install pks to system (~/.local/share/pks)
-  pks doctor                    Show diagnostic info
+   pks doctor                    Show diagnostic info
   pks help                      Show this help
   pks version                   Show version
 EOF
@@ -432,6 +437,209 @@ cmd_doctor() {
   fi
 }
 
+# ---- agent skill directory commands ----------------------------------------
+
+# Known agent skill directory mappings
+resolve_agent_path() {
+  local name="$1"
+  case "$name" in
+    .agents)       echo "$HOME/.agents/skills" ;;
+    opencode)      echo "$HOME/.config/opencode/skills" ;;
+    claude)        echo "$HOME/.claude/skills" ;;
+    trae)          echo "$HOME/.trae/skills" ;;
+    trae-cn)       echo "$HOME/.trae-cn/skills" ;;
+    qoder)         echo "$HOME/.qoder/skills" ;;
+    qoderwork)     echo "$HOME/.qoderwork/skills" ;;
+    qoderworkcn)   echo "$HOME/.qoderworkcn/skills" ;;
+    workbuddy)     echo "$HOME/.workbuddy/skills" ;;
+    codex)         echo "$HOME/.codex/skills" ;;
+    openclaw)      echo "$HOME/.openclaw/skills" ;;
+    hermes)        echo "$HOME/.hermes/skills" ;;
+    teamwork)      echo "$HOME/teamwork/skills" ;;
+    cursor)        echo "$HOME/.cursor/skills" ;;
+    windsurf)      echo "$HOME/.windsurf/skills" ;;
+    *)             echo "" ;;
+  esac
+}
+
+# Check known agent directories and print a formatted table
+detect_agents() {
+  local found=0
+  for entry in \
+    ".agents:$HOME/.agents/skills" \
+    "opencode:$HOME/.config/opencode/skills" \
+    "claude:$HOME/.claude/skills" \
+    "trae:$HOME/.trae/skills" \
+    "trae-cn:$HOME/.trae-cn/skills" \
+    "qoder:$HOME/.qoder/skills" \
+    "qoderwork:$HOME/.qoderwork/skills" \
+    "qoderworkcn:$HOME/.qoderworkcn/skills" \
+    "workbuddy:$HOME/.workbuddy/skills" \
+    "codex:$HOME/.codex/skills" \
+    "openclaw:$HOME/.openclaw/skills" \
+    "hermes:$HOME/.hermes/skills" \
+    "teamwork:$HOME/teamwork/skills" \
+    "cursor:$HOME/.cursor/skills" \
+    "windsurf:$HOME/.windsurf/skills"; do
+
+    local name="${entry%%:*}"
+    local path="${entry#*:}"
+
+    if [[ -d "$path" ]]; then
+      found=$((found + 1))
+      local count=0
+      for d in "$path"/*/; do
+        local bn; bn="$(basename "$d")"
+        [[ "$bn" != _* ]] && count=$((count + 1))
+      done
+
+      local kind="dir"
+      [[ -L "$path" ]] && kind="symlink"
+
+      printf "  \033[1m%-16s\033[0m %s  (\033[33m%d\033[0m skills, %s)\n" \
+        "$name" "$path" "$count" "$kind"
+    fi
+  done
+
+  if [[ $found -eq 0 ]]; then
+    return 1
+  fi
+  echo ""
+  print_ok "$found agent(s) detected"
+}
+
+cmd_agents() {
+  printf "\033[1mDetected Agent Skill Directories\033[0m\n"
+  echo ""
+  detect_agents || print_warn "No agent skill directories detected on this machine"
+}
+
+cmd_install_to() {
+  local agent_name="${1:-}"
+  local skill_name="${2:-}"
+
+  if [[ -z "$agent_name" || -z "$skill_name" ]]; then
+    print_error "Usage: pks install-to <agent-name> <skill-name>"
+    print_info "Run 'pks agents' to see available agents"
+    return 1
+  fi
+
+  local agent_path; agent_path="$(resolve_agent_path "$agent_name")"
+  if [[ -z "$agent_path" ]]; then
+    print_error "Unknown agent '$agent_name'"
+    print_info "Known agents:"
+    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+      local p="$(resolve_agent_path "$e")"
+      printf "  %s → %s\n" "$e" "$p"
+    done
+    return 1
+  fi
+
+  if [[ ! -d "$agent_path" ]]; then
+    mkdir -p "$agent_path"
+    print_info "Created $agent_path"
+  fi
+
+  local src="$SKILLS_DIR/$skill_name"
+  if [[ ! -d "$src" ]]; then
+    print_error "Skill '$skill_name' not found in global skills"
+    print_info "Available:"
+    cmd_list
+    return 1
+  fi
+
+  local dest="$agent_path/$skill_name"
+  if [[ -d "$dest" || -L "$dest" ]]; then
+    print_warn "Skill '$skill_name' already exists in '$agent_name'"
+    return 0
+  fi
+
+  cp -R "$src/" "$dest/"
+  print_ok "Installed skill '$skill_name' → $agent_name ($agent_path)"
+}
+
+cmd_update_to() {
+  local agent_name="${1:-}"
+  local skill_name="${2:-}"
+
+  if [[ -z "$agent_name" || -z "$skill_name" ]]; then
+    print_error "Usage: pks update-to <agent-name> <skill-name>"
+    print_info "Run 'pks agents' to see available agents"
+    return 1
+  fi
+
+  local agent_path; agent_path="$(resolve_agent_path "$agent_name")"
+  if [[ -z "$agent_path" ]]; then
+    print_error "Unknown agent '$agent_name'"
+    print_info "Known agents:"
+    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+      local p="$(resolve_agent_path "$e")"
+      printf "  %s → %s\n" "$e" "$p"
+    done
+    return 1
+  fi
+
+  local src="$SKILLS_DIR/$skill_name"
+  if [[ ! -d "$src" ]]; then
+    print_error "Skill '$skill_name' not found in global skills"
+    print_info "Available:"
+    cmd_list
+    return 1
+  fi
+
+  if [[ ! -d "$agent_path" ]]; then
+    print_error "Agent '$agent_name' has no skill directory at $agent_path"
+    return 1
+  fi
+
+  local dest="$agent_path/$skill_name"
+  if [[ ! -d "$dest" && ! -L "$dest" ]]; then
+    print_error "Skill '$skill_name' is not installed in '$agent_name'"
+    print_info "Install it first: pks install-to $agent_name $skill_name"
+    return 1
+  fi
+
+  rm -rf "$dest"
+  cp -R "$src/" "$dest/"
+  print_ok "Updated skill '$skill_name' in $agent_name ($agent_path)"
+}
+
+cmd_uninstall_from() {
+  local agent_name="${1:-}"
+  local skill_name="${2:-}"
+
+  if [[ -z "$agent_name" || -z "$skill_name" ]]; then
+    print_error "Usage: pks uninstall-from <agent-name> <skill-name>"
+    print_info "Run 'pks agents' to see available agents"
+    return 1
+  fi
+
+  local agent_path; agent_path="$(resolve_agent_path "$agent_name")"
+  if [[ -z "$agent_path" ]]; then
+    print_error "Unknown agent '$agent_name'"
+    print_info "Known agents:"
+    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+      local p="$(resolve_agent_path "$e")"
+      printf "  %s → %s\n" "$e" "$p"
+    done
+    return 1
+  fi
+
+  if [[ ! -d "$agent_path" ]]; then
+    print_error "Agent '$agent_name' has no skill directory at $agent_path"
+    return 1
+  fi
+
+  local dest="$agent_path/$skill_name"
+  if [[ ! -d "$dest" && ! -L "$dest" ]]; then
+    print_error "Skill '$skill_name' is not installed in '$agent_name'"
+    return 1
+  fi
+
+  rm -rf "$dest"
+  print_ok "Uninstalled skill '$skill_name' from $agent_name ($agent_path)"
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
   local cmd="${1:-help}"
@@ -448,6 +656,10 @@ main() {
     uninstall)         cmd_uninstall "${1:-}" ;;
     update|up)         cmd_update "${1:-}" ;;
     push)              cmd_push "${1:-}" ;;
+    install-to|to-agent)   cmd_install_to "${1:-}" "${2:-}" ;;
+    update-to|up-to-agent)       cmd_update_to "${1:-}" "${2:-}" ;;
+    uninstall-from|from-agent)   cmd_uninstall_from "${1:-}" "${2:-}" ;;
+    agents|agent-dirs)           cmd_agents "$@" ;;
     install-self|self-install) cmd_install_self "$@" ;;
     doctor|diag)       cmd_doctor "$@" ;;
     help|--help|-h)    usage ;;
