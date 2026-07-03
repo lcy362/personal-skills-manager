@@ -48,10 +48,14 @@ USAGE
    pks update <name>             Reinstall a skill (uninstall then reinstall from global)
    pks push <name>               Push project skill edits back to global skills
 
-   pks agents                    List detected agent skill directories
+   pks agents                    List detected global agent skill directories
+   pks project-agents            List project-level agent skill directories
    pks install-to <agent> <skill> Install a global skill to an agent's skill dir
    pks uninstall-from <agent> <skill> Remove a skill from an agent's skill dir
    pks update-to <agent> <skill>   Update a skill in agent dir from global skills
+
+   pks link [agent]              Symlink agent(s) project skill dir → .skills/
+   pks unlink [agent]            Remove symlinks from agent project skill dirs
 
    pks install-self              Install pks to system (~/.local/share/pks)
    pks doctor                    Show diagnostic info
@@ -462,6 +466,51 @@ resolve_agent_path() {
   esac
 }
 
+# ---- project-level agent skill directories ----------------------------------
+#
+# Which agents support project-level skills (SKILL.md inside the project)?
+# Based on ecosystem research (Jul 2026):
+#
+#   agent       | project-level dir     | source / notes
+#   ------------+-----------------------+----------------------------------------
+#   opencode    | .opencode/skills/     | opencode.ai/docs/skills (official)
+#   .agents     | .agents/skills/       | opencode + cursor docs (cross-agent std)
+#   claude      | .claude/skills/       | opencode + cursor docs (compat layer)
+#   cursor      | .cursor/skills/       | cursor.com/docs/skills (official)
+#   windsurf    | .windsurf/skills/     | windsurf skill docs
+#   trae        | .trae/skills/         | docs.trae.ai/ide/skills (official)
+#   trae-cn     | .trae-cn/skills/      | same as trae, China variant
+#   codex       | .codex/skills/        | cursor docs (compat for Codex CLI)
+#   qoder       | .qoder/skills/        | inferred from global convention
+#   qoderwork   | .qoderwork/skills/    | inferred from global convention
+#   qoderworkcn | .qoderworkcn/skills/  | inferred from global convention
+#   workbuddy   | .workbuddy/skills/    | inferred from global convention
+#   openclaw    | .openclaw/skills/     | inferred from global convention
+#   hermes      | .hermes/skills/       | inferred from global convention
+#   teamwork    | teamwork/skills/      | inferred from global convention
+#
+resolve_project_agent_path() {
+  local name="$1"
+  case "$name" in
+    .agents)       echo ".agents/skills" ;;
+    opencode)      echo ".opencode/skills" ;;
+    claude)        echo ".claude/skills" ;;
+    cursor)        echo ".cursor/skills" ;;
+    windsurf)      echo ".windsurf/skills" ;;
+    trae)          echo ".trae/skills" ;;
+    trae-cn)       echo ".trae-cn/skills" ;;
+    codex)         echo ".codex/skills" ;;
+    qoder)         echo ".qoder/skills" ;;
+    qoderwork)     echo ".qoderwork/skills" ;;
+    qoderworkcn)   echo ".qoderworkcn/skills" ;;
+    workbuddy)     echo ".workbuddy/skills" ;;
+    openclaw)      echo ".openclaw/skills" ;;
+    hermes)        echo ".hermes/skills" ;;
+    teamwork)      echo "teamwork/skills" ;;
+    *)             echo "" ;;
+  esac
+}
+
 # Check known agent directories and print a formatted table
 detect_agents() {
   local found=0
@@ -508,10 +557,66 @@ detect_agents() {
   print_ok "$found agent(s) detected"
 }
 
+# Check project-level agent skill directories
+detect_project_agents() {
+  local found=0
+  for entry in \
+    ".agents:.agents/skills" \
+    "opencode:.opencode/skills" \
+    "claude:.claude/skills" \
+    "cursor:.cursor/skills" \
+    "windsurf:.windsurf/skills" \
+    "trae:.trae/skills" \
+    "trae-cn:.trae-cn/skills" \
+    "codex:.codex/skills" \
+    "qoder:.qoder/skills" \
+    "qoderwork:.qoderwork/skills" \
+    "qoderworkcn:.qoderworkcn/skills" \
+    "workbuddy:.workbuddy/skills" \
+    "openclaw:.openclaw/skills" \
+    "hermes:.hermes/skills" \
+    "teamwork:teamwork/skills"; do
+
+    local name="${entry%%:*}"
+    local rel_path="${entry#*:}"
+
+    if [[ -d "$rel_path" || -L "$rel_path" ]]; then
+      found=$((found + 1))
+      local count=0
+      local scan_dir="$rel_path"
+      [[ -L "$rel_path" ]] && scan_dir="$(readlink "$rel_path")"
+      if [[ -d "$scan_dir" ]]; then
+        for d in "$scan_dir"/*/; do
+          local bn; bn="$(basename "$d")"
+          [[ "$bn" != _* ]] && count=$((count + 1))
+        done
+      fi
+
+      local kind="dir"
+      [[ -L "$rel_path" ]] && kind="symlink → $(readlink "$rel_path")"
+
+      printf "  \033[1m%-16s\033[0m %s  (\033[33m%d\033[0m skills, %s)\n" \
+        "$name" "$rel_path" "$count" "$kind"
+    fi
+  done
+
+  if [[ $found -eq 0 ]]; then
+    return 1
+  fi
+  echo ""
+  print_ok "$found project agent(s) detected"
+}
+
 cmd_agents() {
   printf "\033[1mDetected Agent Skill Directories\033[0m\n"
   echo ""
   detect_agents || print_warn "No agent skill directories detected on this machine"
+}
+
+cmd_project_agents() {
+  printf "\033[1mProject Agent Skill Directories\033[0m\n"
+  echo ""
+  detect_project_agents || print_warn "No project-level agent skill directories found in $(pwd)"
 }
 
 cmd_install_to() {
@@ -640,6 +745,148 @@ cmd_uninstall_from() {
   print_ok "Uninstalled skill '$skill_name' from $agent_name ($agent_path)"
 }
 
+# ---- project-level skill symlink commands ----------------------------------
+
+cmd_link() {
+  local agent_name="${1:-}"
+
+  ensure_in_project || return 1
+
+  if [[ -n "$agent_name" ]]; then
+    # Link single agent
+    local rel_path; rel_path="$(resolve_project_agent_path "$agent_name")"
+    if [[ -z "$rel_path" ]]; then
+      print_error "Unknown agent '$agent_name'"
+      print_info "Known agents:"
+      for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+        local p="$(resolve_project_agent_path "$e")"
+        printf "  %s → %s\n" "$e" "$p"
+      done
+      return 1
+    fi
+    _link_one "$agent_name" "$rel_path"
+  else
+    # Link all known project agents
+    local linked=0
+    for entry in \
+      ".agents:.agents/skills" \
+      "opencode:.opencode/skills" \
+      "claude:.claude/skills" \
+      "cursor:.cursor/skills" \
+      "windsurf:.windsurf/skills" \
+      "trae:.trae/skills" \
+      "trae-cn:.trae-cn/skills" \
+      "codex:.codex/skills" \
+      "qoder:.qoder/skills" \
+      "qoderwork:.qoderwork/skills" \
+      "qoderworkcn:.qoderworkcn/skills" \
+      "workbuddy:.workbuddy/skills" \
+      "openclaw:.openclaw/skills" \
+      "hermes:.hermes/skills" \
+      "teamwork:teamwork/skills"; do
+      local name="${entry%%:*}"
+      local path="${entry#*:}"
+      if _link_one "$name" "$path"; then
+        linked=$((linked + 1))
+      fi
+    done
+    if [[ $linked -gt 0 ]]; then
+      echo ""
+      print_ok "Linked $linked agent(s) → $PROJECT_SKILLS_DIR"
+    fi
+  fi
+}
+
+_link_one() {
+  local name="$1"
+  local rel_path="$2"
+
+  if [[ -L "$rel_path" ]]; then
+    local current_target; current_target="$(readlink "$rel_path")"
+    if [[ "$current_target" == "$PROJECT_SKILLS_DIR" ]]; then
+      print_ok "[$name] $rel_path → $PROJECT_SKILLS_DIR (already linked)"
+      return 0
+    fi
+    print_warn "[$name] $rel_path → $current_target (different target, skipping)"
+    print_info "  Remove it first: rm '$rel_path'"
+    return 1
+  fi
+
+  if [[ -d "$rel_path" ]]; then
+    print_warn "[$name] $rel_path is a real directory (not a symlink), skipping"
+    print_info "  Remove it first: rm -rf '$rel_path'"
+    return 1
+  fi
+
+  # Ensure parent dir exists
+  mkdir -p "$(dirname "$rel_path")"
+  ln -s "$PROJECT_SKILLS_DIR" "$rel_path"
+  print_ok "[$name] $rel_path → $PROJECT_SKILLS_DIR"
+  return 0
+}
+
+cmd_unlink() {
+  local agent_name="${1:-}"
+
+  if [[ -n "$agent_name" ]]; then
+    local rel_path; rel_path="$(resolve_project_agent_path "$agent_name")"
+    if [[ -z "$rel_path" ]]; then
+      print_error "Unknown agent '$agent_name'"
+      return 1
+    fi
+    _unlink_one "$agent_name" "$rel_path"
+  else
+    # Unlink all
+    local unlinked=0
+    for entry in \
+      ".agents:.agents/skills" \
+      "opencode:.opencode/skills" \
+      "claude:.claude/skills" \
+      "cursor:.cursor/skills" \
+      "windsurf:.windsurf/skills" \
+      "trae:.trae/skills" \
+      "trae-cn:.trae-cn/skills" \
+      "codex:.codex/skills" \
+      "qoder:.qoder/skills" \
+      "qoderwork:.qoderwork/skills" \
+      "qoderworkcn:.qoderworkcn/skills" \
+      "workbuddy:.workbuddy/skills" \
+      "openclaw:.openclaw/skills" \
+      "hermes:.hermes/skills" \
+      "teamwork:teamwork/skills"; do
+      local name="${entry%%:*}"
+      local path="${entry#*:}"
+      if _unlink_one "$name" "$path"; then
+        unlinked=$((unlinked + 1))
+      fi
+    done
+    if [[ $unlinked -gt 0 ]]; then
+      echo ""
+      print_ok "Unlinked $unlinked agent(s)"
+    fi
+  fi
+}
+
+_unlink_one() {
+  local name="$1"
+  local rel_path="$2"
+
+  if [[ ! -L "$rel_path" ]]; then
+    if [[ -e "$rel_path" ]]; then
+      print_info "[$name] $rel_path is not a symlink, skipping"
+    fi
+    return 1
+  fi
+
+  rm "$rel_path"
+  print_ok "[$name] removed symlink $rel_path"
+
+  # Clean up empty parent dirs
+  local parent; parent="$(dirname "$rel_path")"
+  [[ -d "$parent" && -z "$(ls -A "$parent" 2>/dev/null)" ]] && rmdir "$parent" 2>/dev/null
+  return 0
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
   local cmd="${1:-help}"
@@ -660,6 +907,9 @@ main() {
     update-to|up-to-agent)       cmd_update_to "${1:-}" "${2:-}" ;;
     uninstall-from|from-agent)   cmd_uninstall_from "${1:-}" "${2:-}" ;;
     agents|agent-dirs)           cmd_agents "$@" ;;
+    project-agents|proj-agents)  cmd_project_agents "$@" ;;
+    link|symlink)                cmd_link "${1:-}" ;;
+    unlink|unsymlink)            cmd_unlink "${1:-}" ;;
     install-self|self-install) cmd_install_self "$@" ;;
     doctor|diag)       cmd_doctor "$@" ;;
     help|--help|-h)    usage ;;
