@@ -584,10 +584,10 @@ detect_project_agents() {
     if [[ -d "$rel_path" || -L "$rel_path" ]]; then
       found=$((found + 1))
       local count=0
-      local scan_dir="$rel_path"
-      [[ -L "$rel_path" ]] && scan_dir="$(readlink "$rel_path")"
-      if [[ -d "$scan_dir" ]]; then
-        for d in "$scan_dir"/*/; do
+      # Use $rel_path directly — bash follows symlinks naturally through
+      # directory traversal, avoiding the CWD-relative readlink trap
+      if [[ -d "$rel_path" ]]; then
+        for d in "$rel_path"/*/; do
           local bn; bn="$(basename "$d")"
           [[ "$bn" != _* ]] && count=$((count + 1))
         done
