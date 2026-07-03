@@ -823,14 +823,33 @@ cmd_link() {
   fi
 }
 
+# Compute the relative symlink target from rel_path's parent to PROJECT_SKILLS_DIR
+# e.g. .opencode/skills → ../.skills,  teamdir/nested/skills → ../../.skills
+_link_target() {
+  local rel_path="$1"
+  local parent; parent="$(dirname "$rel_path")"
+  if [[ "$parent" == "." ]]; then
+    echo "$PROJECT_SKILLS_DIR"
+    return
+  fi
+  local up=""
+  local segment
+  IFS='/' read -ra parts <<< "$parent"
+  for _ in "${parts[@]}"; do
+    up="${up}../"
+  done
+  echo "${up}$PROJECT_SKILLS_DIR"
+}
+
 _link_one() {
   local name="$1"
   local rel_path="$2"
+  local target; target="$(_link_target "$rel_path")"
 
   if [[ -L "$rel_path" ]]; then
     local current_target; current_target="$(readlink "$rel_path")"
-    if [[ "$current_target" == "$PROJECT_SKILLS_DIR" ]]; then
-      print_ok "[$name] $rel_path → $PROJECT_SKILLS_DIR (already linked)"
+    if [[ "$current_target" == "$target" ]]; then
+      print_ok "[$name] $rel_path → $target (already linked)"
       return 0
     fi
     print_warn "[$name] $rel_path → $current_target (different target, skipping)"
@@ -844,10 +863,9 @@ _link_one() {
     return 1
   fi
 
-  # Ensure parent dir exists
   mkdir -p "$(dirname "$rel_path")"
-  ln -s "$PROJECT_SKILLS_DIR" "$rel_path"
-  print_ok "[$name] $rel_path → $PROJECT_SKILLS_DIR"
+  ln -s "$target" "$rel_path"
+  print_ok "[$name] $rel_path → $target"
   return 0
 }
 
