@@ -122,7 +122,7 @@ PKS_HOME=/custom/path PKS_BIN_DIR=/custom/bin pks install-self
 
 不指定 `agent` 参数时，`link`/`unlink` 会作用于所有已支持的 Agent。
 
-当前支持的 Agent：opencode、.agents、claude、cursor、windsurf、trae、trae-cn、codex、qoder、qoderwork、qoderworkcn、workbuddy、openclaw、hermes、teamwork。
+当前支持的 Agent：opencode、.agents、claude、cursor、windsurf、trae、trae-cn、codex、qoder、qoderwork、qoderworkcn、workbuddy、openclaw、hermes、teamwork、reasonix。
 
 ### 删除 vs 卸载
 

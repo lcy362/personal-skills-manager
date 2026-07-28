@@ -463,6 +463,7 @@ resolve_agent_path() {
     teamwork)      echo "$HOME/teamwork/skills" ;;
     cursor)        echo "$HOME/.cursor/skills" ;;
     windsurf)      echo "$HOME/.windsurf/skills" ;;
+    reasonix)      echo "${REASONIX_SKILLS_DIR:-$HOME/.reasonix/skills}" ;;
     *)             echo "" ;;
   esac
 }
@@ -489,6 +490,7 @@ resolve_agent_path() {
 #   openclaw    | .openclaw/skills/     | inferred from global convention
 #   hermes      | .hermes/skills/       | inferred from global convention
 #   teamwork    | teamwork/skills/      | inferred from global convention
+#   reasonix    | .reasonix/skills/     | github.com/esengine/DeepSeek-Reasonix (official)
 #
 resolve_project_agent_path() {
   local name="$1"
@@ -508,6 +510,7 @@ resolve_project_agent_path() {
     openclaw)      echo ".openclaw/skills" ;;
     hermes)        echo ".hermes/skills" ;;
     teamwork)      echo "teamwork/skills" ;;
+    reasonix)      echo ".reasonix/skills" ;;
     *)             echo "" ;;
   esac
 }
@@ -530,7 +533,8 @@ detect_agents() {
     "hermes:$HOME/.hermes/skills" \
     "teamwork:$HOME/teamwork/skills" \
     "cursor:$HOME/.cursor/skills" \
-    "windsurf:$HOME/.windsurf/skills"; do
+    "windsurf:$HOME/.windsurf/skills" \
+    "reasonix:$HOME/.reasonix/skills"; do
 
     local name="${entry%%:*}"
     local path="${entry#*:}"
@@ -576,7 +580,8 @@ detect_project_agents() {
     "workbuddy:.workbuddy/skills" \
     "openclaw:.openclaw/skills" \
     "hermes:.hermes/skills" \
-    "teamwork:teamwork/skills"; do
+    "teamwork:teamwork/skills" \
+    "reasonix:.reasonix/skills"; do
 
     local name="${entry%%:*}"
     local rel_path="${entry#*:}"
@@ -640,6 +645,7 @@ cmd_list_project_supported() {
   printf "  %-16s %-22s %s\n" "openclaw"    ".openclaw/skills/"    "inferred from global convention"
   printf "  %-16s %-22s %s\n" "hermes"      ".hermes/skills/"      "inferred from global convention"
   printf "  %-16s %-22s %s\n" "teamwork"    "teamwork/skills/"     "inferred from global convention"
+  printf "  %-16s %-22s %s\n" "reasonix"    ".reasonix/skills/"    "github.com/esengine/DeepSeek-Reasonix (official)"
   printf "\n"
   print_info "Run 'pks link <agent>' to symlink an agent's dir to .skills/"
   print_info "Run 'pks project-agents' to see which dirs exist in this project"
@@ -659,7 +665,7 @@ cmd_install_to() {
   if [[ -z "$agent_path" ]]; then
     print_error "Unknown agent '$agent_name'"
     print_info "Known agents:"
-    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf reasonix; do
       local p="$(resolve_agent_path "$e")"
       printf "  %s → %s\n" "$e" "$p"
     done
@@ -703,7 +709,7 @@ cmd_update_to() {
   if [[ -z "$agent_path" ]]; then
     print_error "Unknown agent '$agent_name'"
     print_info "Known agents:"
-    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf reasonix; do
       local p="$(resolve_agent_path "$e")"
       printf "  %s → %s\n" "$e" "$p"
     done
@@ -749,7 +755,7 @@ cmd_uninstall_from() {
   if [[ -z "$agent_path" ]]; then
     print_error "Unknown agent '$agent_name'"
     print_info "Known agents:"
-    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+    for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf reasonix; do
       local p="$(resolve_agent_path "$e")"
       printf "  %s → %s\n" "$e" "$p"
     done
@@ -784,7 +790,7 @@ cmd_link() {
     if [[ -z "$rel_path" ]]; then
       print_error "Unknown agent '$agent_name'"
       print_info "Known agents:"
-      for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf; do
+      for e in .agents opencode claude trae trae-cn qoder qoderwork qoderworkcn workbuddy codex openclaw hermes teamwork cursor windsurf reasonix; do
         local p="$(resolve_project_agent_path "$e")"
         printf "  %s → %s\n" "$e" "$p"
       done
@@ -809,7 +815,8 @@ cmd_link() {
       "workbuddy:.workbuddy/skills" \
       "openclaw:.openclaw/skills" \
       "hermes:.hermes/skills" \
-      "teamwork:teamwork/skills"; do
+      "teamwork:teamwork/skills" \
+      "reasonix:.reasonix/skills"; do
       local name="${entry%%:*}"
       local path="${entry#*:}"
       if _link_one "$name" "$path"; then
@@ -897,7 +904,8 @@ cmd_unlink() {
       "workbuddy:.workbuddy/skills" \
       "openclaw:.openclaw/skills" \
       "hermes:.hermes/skills" \
-      "teamwork:teamwork/skills"; do
+      "teamwork:teamwork/skills" \
+      "reasonix:.reasonix/skills"; do
       local name="${entry%%:*}"
       local path="${entry#*:}"
       if _unlink_one "$name" "$path"; then

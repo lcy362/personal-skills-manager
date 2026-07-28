@@ -122,7 +122,7 @@ After installation, restart your terminal or run `source ~/.zshrc` to start usin
 
 When no `agent` is specified, `link`/`unlink` applies to all supported agents.
 
-Supported agents: opencode, .agents, claude, cursor, windsurf, trae, trae-cn, codex, qoder, qoderwork, qoderworkcn, workbuddy, openclaw, hermes, teamwork.
+Supported agents: opencode, .agents, claude, cursor, windsurf, trae, trae-cn, codex, qoder, qoderwork, qoderworkcn, workbuddy, openclaw, hermes, teamwork, reasonix.
 
 ### Delete vs Uninstall
 
